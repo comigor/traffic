@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Live Traffic ETA</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --bg: #0a0a0a;
+                --text: #ffffff;
+                --text-dim: rgba(255, 255, 255, 0.5);
+                --border: rgba(255, 255, 255, 0.08);
+                --card-bg: rgba(255, 255, 255, 0.02);
+
+                --color-green: #34d399;
+                --color-amber: #fbbf24;
+                --color-red: #f87171;
+
+                --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                --font-mono: "JetBrains Mono", monospace;
+            }
+
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            body {
+                background-color: var(--bg);
+                color: var(--text);
+                font-family: var(--font-body);
+                min-height: 100vh;
+                overflow-x: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+
+            /* Ambient Background */
+            .ambient-bg {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: -2;
+                background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.03) 0%, transparent 60%);
+                animation: pulse-ambient 30s ease-in-out infinite alternate;
+            }
+
+            @keyframes pulse-ambient {
+                0% {
+                    transform: scale(1) translate(0, 0);
+                    opacity: 0.5;
+                }
+                50% {
+                    transform: scale(1.2) translate(2%, 2%);
+                    opacity: 1;
+                }
+                100% {
+                    transform: scale(0.9) translate(-2%, -1%);
+                    opacity: 0.5;
+                }
+            }
+
+            .noise-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: -1;
+                pointer-events: none;
+                background: repeating-linear-gradient(
+                    0deg,
+                    rgba(0, 0, 0, 0.15),
+                    rgba(0, 0, 0, 0.15) 1px,
+                    transparent 1px,
+                    transparent 2px
+                );
+                opacity: 0.3;
+            }
+
+            /* Top Bar */
+            .top-bar {
+                height: 72px;
+                padding: 0 32px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                border-bottom: 1px solid var(--border);
+                background: rgba(10, 10, 10, 0.8);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                position: sticky;
+                top: 0;
+                z-index: 10;
+            }
+
+            .top-bar-left {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-variant: small-caps;
+                letter-spacing: 0.05em;
+                font-weight: 600;
+                font-size: 1.1rem;
+            }
+
+            .top-bar-left svg {
+                width: 18px;
+                height: 18px;
+                fill: currentColor;
+                opacity: 0.7;
+            }
+
+            .top-bar-center {
+                position: absolute;
+                left: 50%;
+                transform: translateX(-50%);
+                font-family: var(--font-mono);
+                font-size: 2rem;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+            }
+
+            .top-bar-right {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 4px;
+            }
+
+            .meta-row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 0.75rem;
+            }
+
+            .meta-label {
+                font-variant: small-caps;
+                color: var(--text-dim);
+                letter-spacing: 0.05em;
+            }
+
+            .meta-value {
+                font-family: var(--font-mono);
+                min-width: 65px;
+                text-align: right;
+            }
+
+            /* Error Bar */
+            .error-bar {
+                background: rgba(251, 191, 36, 0.15);
+                color: var(--color-amber);
+                text-align: center;
+                padding: 6px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                display: none;
+                border-bottom: 1px solid rgba(251, 191, 36, 0.3);
+            }
+
+            /* Main Grid */
+            .main-content {
+                padding: 32px;
+                flex: 1;
+            }
+
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+                gap: 20px;
+                margin: 0 auto;
+            }
+
+            /* Card */
+            .card {
+                background: var(--card-bg);
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                padding: 24px;
+                position: relative;
+                box-shadow:
+                    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                    0 4px 24px rgba(0, 0, 0, 0.2);
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+                transition: opacity 0.3s ease;
+            }
+
+            .card-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .card-title {
+                font-size: 1.5rem;
+                font-weight: 600;
+                letter-spacing: -0.01em;
+            }
+
+            .stale-badge {
+                background: rgba(251, 191, 36, 0.1);
+                color: var(--color-amber);
+                border: 1px solid rgba(251, 191, 36, 0.2);
+                padding: 2px 8px;
+                border-radius: 12px;
+                font-size: 0.7rem;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                display: none;
+            }
+
+            .eta-row {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+            }
+
+            .dir-icon {
+                font-size: 1.5rem;
+                color: var(--text-dim);
+                width: 24px;
+                text-align: center;
+            }
+
+            .eta-data {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .eta-time {
+                font-family: var(--font-mono);
+                font-size: 2.5rem;
+                font-weight: 700;
+                line-height: 1;
+                letter-spacing: -0.03em;
+            }
+
+            .eta-time.skeleton {
+                color: transparent;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 6px;
+                width: 120px;
+                height: 2.5rem;
+                animation: shimmer 1.5s infinite linear;
+            }
+
+            .eta-sub {
+                color: var(--text-dim);
+                font-size: 0.85rem;
+                margin-top: 4px;
+            }
+
+            .eta-sub.skeleton {
+                color: transparent;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 4px;
+                width: 60px;
+                height: 1rem;
+                margin-top: 8px;
+            }
+
+            .traffic-chip {
+                padding: 6px 12px;
+                border-radius: 8px;
+                font-family: var(--font-mono);
+                font-size: 0.9rem;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+
+            .traffic-chip.skeleton {
+                color: transparent;
+                background: rgba(255, 255, 255, 0.05);
+                width: 80px;
+                height: 32px;
+            }
+
+            .chip-green {
+                background: rgba(52, 211, 153, 0.15);
+                color: var(--color-green);
+            }
+            .chip-amber {
+                background: rgba(251, 191, 36, 0.15);
+                color: var(--color-amber);
+            }
+            .chip-red {
+                background: rgba(248, 113, 113, 0.15);
+                color: var(--color-red);
+            }
+
+            .mode-peak {
+                color: var(--text);
+                font-weight: 600;
+            }
+            .mode-off-peak {
+                color: var(--text-dim);
+            }
+            .mode-sleep {
+                color: var(--color-amber);
+            }
+
+            @keyframes shimmer {
+                0% {
+                    opacity: 0.5;
+                }
+                50% {
+                    opacity: 1;
+                }
+                100% {
+                    opacity: 0.5;
+                }
+            }
+
+            /* Empty State */
+            .empty-state {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid var(--border);
+                padding: 40px;
+                border-radius: 16px;
+                text-align: center;
+                backdrop-filter: blur(10px);
+                max-width: 500px;
+                width: 90%;
+            }
+
+            .empty-state h1 {
+                font-size: 1.75rem;
+                margin-bottom: 16px;
+            }
+
+            .empty-state p {
+                color: var(--text-dim);
+                margin-bottom: 24px;
+                line-height: 1.5;
+                white-space: pre-line;
+                max-width: 640px;
+            }
+
+            .empty-state code {
+                display: block;
+                background: rgba(0, 0, 0, 0.5);
+                padding: 16px;
+                border-radius: 8px;
+                font-family: var(--font-mono);
+                color: var(--color-green);
+                font-size: 0.9rem;
+                border: 1px solid var(--border);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="ambient-bg"></div>
+        <div class="noise-overlay"></div>
+
+        <div id="errorBar" class="error-bar"></div>
+
+        <header class="top-bar">
+            <div class="top-bar-left" id="hqName">
+                <svg viewBox="0 0 24 24">
+                    <path
+                        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                    />
+                </svg>
+                HQ
+            </div>
+            <div class="top-bar-center" id="clock">--:--</div>
+            <div class="top-bar-right">
+                <div class="meta-row">
+                    <span class="meta-label">Last Updated</span>
+                    <span class="meta-value" id="lastUpdated">--:--:--</span>
+                </div>
+                <div class="meta-row">
+                    <span class="meta-label" id="nextRefreshLabel">Next Refresh</span>
+                    <span class="meta-value" id="nextRefresh">--:--</span>
+                </div>
+                <div class="meta-row">
+                    <span class="meta-label">Schedule</span>
+                    <span class="meta-value" id="scheduleMode">--</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div id="grid" class="grid"></div>
+        </main>
+
+        <div id="emptyState" class="empty-state" style="display: none">
+            <h1>API Key Required</h1>
+            <p>Please provide a Google Maps API Key via the URL to start viewing live traffic ETAs.</p>
+            <code>?key=YOUR_API_KEY</code>
+            <p style="margin-top: 24px; font-size: 0.85rem">
+                Optional params: <br />
+                <code>&refresh=10</code> (peak interval, minutes) <br />
+                <code>&units=imperial</code> (or metric)
+            </p>
+        </div>
+
+        <div id="firstLoadError" class="empty-state" style="display: none">
+            <h1>Failed to Load Data</h1>
+            <p id="firstLoadErrorMsg">An error occurred while fetching traffic data.</p>
+            <p style="margin-top: 16px; font-size: 0.85rem; color: var(--text-dim)">Check the API key, billing status, and network connection, then reload.</p>
+        </div>
+
+        <script>
+            // --- 1. CONFIGURATION ---
+            const HQ = { name: "HQ", address: "Rua Groenlândia, 1157 - Jardim America, São Paulo - SP, 01434-100" };
+            const PLACES = [
+                {
+                    name: "✈️ GRU Airport",
+                    address: "Rod. Hélio Smidt, s/nº - Aeroporto, Guarulhos - SP, 07190-100",
+                    dir: "both",
+                },
+                {
+                    name: "✈️ CGH Airport",
+                    address: "Av. Washington Luís, s/n - Campo Belo, São Paulo - SP, 04626-911",
+                    dir: "both",
+                },
+                {
+                    name: "🚰 Parque SABESP",
+                    address: "Av. Prof. Alfonso Bovero - Pompeia, São Paulo - SP, 01254-050",
+                    dir: "both",
+                },
+                {
+                    name: "⚽ MorumBIS",
+                    address: "Praça Roberto Gomes Pedrosa, 1 - Morumbi, São Paulo - SP, 05653-070",
+                    dir: "both",
+                },
+                {
+                    name: "🚇 Santa Cruz",
+                    address: "R. Domingos de Morais, 2564 - Vila Mariana, São Paulo - SP, 04036-100",
+                    dir: "both",
+                },
+                { name: "🚇 Moema", address: "Indianópolis, São Paulo - State of São Paulo, 04075-010", dir: "both" },
+                {
+                    name: "🚇 Fradique Coutinho",
+                    address: "R. dos Pinheiros, 623 - Pinheiros, São Paulo - SP, 05422-011",
+                    dir: "both",
+                },
+            ];
+
+            // Refresh schedule — all times in BRT (America/Sao_Paulo), expressed as minutes since midnight.
+            // Edit these constants to adjust windows; peakIntervalMin is controlled via ?refresh= URL param.
+            const SCHEDULE = {
+                timezone: "America/Sao_Paulo",
+                peakWindows: [
+                    [8 * 60, 9 * 60 + 30], // 08:00 – 09:30
+                    [11 * 60 + 30, 13 * 60], // 11:30 – 13:00
+                    [18 * 60 + 30, 21 * 60], // 18:30 – 21:00
+                ],
+                sleepWindows: [
+                    [22 * 60, 24 * 60], // 22:00 – 00:00
+                    [0, 6 * 60], // 00:00 – 06:00
+                ],
+                offPeakIntervalMin: 60,
+            };
+
+            // --- 2. STATE & PARAMS ---
+            const params = new URLSearchParams(window.location.search);
+            const config = {
+                key: params.get("key"),
+                // ?refresh= controls the PEAK window interval only (default 10 min, clamped 1–30).
+                peakIntervalMin: (() => {
+                    const p = parseInt(params.get("refresh"), 10);
+                    return Number.isFinite(p) ? Math.max(1, Math.min(30, p)) : 10;
+                })(),
+                units: params.get("units") === "imperial" ? "imperial" : "metric",
+                debug: params.get("debug") === "1",
+            };
+
+            let nextRefreshTime = Date.now(); // set properly on first doRefresh call
+            let isStale = false;
+            let consecutiveFailures = 0;
+            let routeMatrix = null;
+            let debugLogged = false;
+
+            // Store current rendered data to diff for animations
+            let currentData = {};
+
+            // --- 3. PURE HELPERS ---
+            function escapeHtml(s) {
+                const div = document.createElement("div");
+                div.textContent = s;
+                return div.innerHTML;
+            }
+
+            function padZero(num) {
+                return num.toString().padStart(2, "0");
+            }
+
+            function formatClock(date) {
+                return `${padZero(date.getHours())}:${padZero(date.getMinutes())}`;
+            }
+
+            function formatTimeFull(date) {
+                return `${padZero(date.getHours())}:${padZero(date.getMinutes())}:${padZero(date.getSeconds())}`;
+            }
+
+            function formatCountdown(ms) {
+                if (ms < 0) return "0:00";
+                const totalSec = Math.floor(ms / 1000);
+                const m = Math.floor(totalSec / 60);
+                const s = totalSec % 60;
+                return `${m}:${padZero(s)}`;
+            }
+
+            function formatDuration(seconds) {
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                if (h > 0) return `${h}h ${padZero(m)}m`;
+                return `${m} min`;
+            }
+
+            function formatDistance(meters, units) {
+                if (units === "imperial") {
+                    const miles = meters * 0.000621371;
+                    return `${miles.toFixed(1)} mi`;
+                }
+                const km = meters / 1000;
+                return `${km.toFixed(1)} km`;
+            }
+
+            // --- SCHEDULE HELPERS ---
+            // Returns minutes elapsed since BRT midnight, timezone-safe via Intl.
+            function getBrtMinutes(date) {
+                date = date || new Date();
+                const parts = new Intl.DateTimeFormat("en-US", {
+                    timeZone: SCHEDULE.timezone,
+                    hour: "numeric",
+                    minute: "numeric",
+                    hour12: false,
+                }).formatToParts(date);
+                const h = parseInt(parts.find((p) => p.type === "hour").value, 10);
+                const m = parseInt(parts.find((p) => p.type === "minute").value, 10);
+                // Intl may return 24 for midnight in some engines; normalize to 0.
+                return (h % 24) * 60 + m;
+            }
+
+            function getScheduleMode(brtMinutes) {
+                for (const [start, end] of SCHEDULE.sleepWindows) {
+                    if (brtMinutes >= start && brtMinutes < end) return "sleep";
+                }
+                for (const [start, end] of SCHEDULE.peakWindows) {
+                    if (brtMinutes >= start && brtMinutes < end) return "peak";
+                }
+                return "off-peak";
+            }
+
+            // Returns { delayMs, mode, nextWindowStartLabel? }
+            function getNextRefreshDelayMs(now) {
+                const brtMin = getBrtMinutes(now);
+                const mode = getScheduleMode(brtMin);
+                if (mode === "peak") {
+                    return { delayMs: config.peakIntervalMin * 60_000, mode };
+                }
+                if (mode === "off-peak") {
+                    return { delayMs: SCHEDULE.offPeakIntervalMin * 60_000, mode };
+                }
+                // sleep: delay until 06:00 BRT
+                const wakeMin = 6 * 60;
+                let minsUntilWake = wakeMin - brtMin;
+                if (minsUntilWake <= 0) minsUntilWake += 24 * 60;
+                return { delayMs: minsUntilWake * 60_000, mode, nextWindowStartLabel: "06:00 BRT" };
+            }
+
+            function classifyDelta(durationSec, durationInTrafficSec) {
+                const delta = durationInTrafficSec - durationSec;
+                const ratio = durationInTrafficSec / durationSec;
+
+                const deltaMin = Math.round(delta / 60);
+
+                if (deltaMin < 3 || ratio < 1.1) {
+                    return { level: "green", label: "On time" };
+                }
+                if (deltaMin < 10 || ratio < 1.3) {
+                    return { level: "amber", label: `+${deltaMin} min` };
+                }
+                return { level: "red", label: `+${deltaMin} min` };
+            }
+
+            // --- 4. DOM RENDERERS ---
+            const gridEl = document.getElementById("grid");
+            const clockEl = document.getElementById("clock");
+            const lastUpdatedEl = document.getElementById("lastUpdated");
+            const nextRefreshEl = document.getElementById("nextRefresh");
+            const nextRefreshLabelEl = document.getElementById("nextRefreshLabel");
+            const scheduleModeEl = document.getElementById("scheduleMode");
+            const errorBarEl = document.getElementById("errorBar");
+
+            function updateModeIndicator(mode, nextWindowStartLabel) {
+                scheduleModeEl.className = "meta-value";
+                if (mode === "peak") {
+                    scheduleModeEl.textContent = "PEAK";
+                    scheduleModeEl.classList.add("mode-peak");
+                    nextRefreshLabelEl.textContent = "Next Refresh";
+                    nextRefreshEl.className = "meta-value";
+                } else if (mode === "off-peak") {
+                    scheduleModeEl.textContent = "OFF-PEAK";
+                    scheduleModeEl.classList.add("mode-off-peak");
+                    nextRefreshLabelEl.textContent = "Next Refresh";
+                    nextRefreshEl.className = "meta-value";
+                } else {
+                    scheduleModeEl.textContent = "PAUSED";
+                    scheduleModeEl.classList.add("mode-sleep");
+                    nextRefreshLabelEl.textContent = "Resumes";
+                    nextRefreshEl.className = "meta-value mode-sleep";
+                    if (nextWindowStartLabel) nextRefreshEl.textContent = nextWindowStartLabel;
+                }
+            }
+
+            function renderEmptyState() {
+                document.querySelector(".top-bar").style.display = "none";
+                gridEl.style.display = "none";
+                document.getElementById("emptyState").style.display = "block";
+            }
+
+            function renderSkeleton() {
+                document.getElementById("hqName").innerHTML = `
+        <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+        ${escapeHtml(HQ.name)}
+      `;
+
+                gridEl.innerHTML = PLACES.map(
+                    (p) => `
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">${escapeHtml(p.name)}</div>
+          </div>
+          ${
+              p.dir === "from-hq" || p.dir === "both"
+                  ? `
+            <div class="eta-row eta-row-anim">
+              <div class="dir-icon">→</div>
+              <div class="eta-data">
+                <div class="eta-time skeleton">00</div>
+                <div class="eta-sub skeleton">0</div>
+              </div>
+              <div class="traffic-chip skeleton"></div>
+            </div>
+          `
+                  : ""
+          }
+          ${
+              p.dir === "to-hq" || p.dir === "both"
+                  ? `
+            <div class="eta-row eta-row-anim">
+              <div class="dir-icon">←</div>
+              <div class="eta-data">
+                <div class="eta-time skeleton">00</div>
+                <div class="eta-sub skeleton">0</div>
+              </div>
+              <div class="traffic-chip skeleton"></div>
+            </div>
+          `
+                  : ""
+          }
+        </div>
+      `,
+                ).join("");
+            }
+
+            function renderCards(dataMap) {
+                let html = "";
+
+                PLACES.forEach((p, index) => {
+                    const d = dataMap[p.name];
+                    if (!d) return;
+
+                    html += `<div class="card" id="card-${index}">
+          <div class="card-header">
+            <div class="card-title">${escapeHtml(p.name)}</div>
+            <div class="stale-badge" style="display: ${isStale ? "block" : "none"}">STALE</div>
+          </div>`;
+
+                    if (d.fromHQ) {
+                        html += renderEtaRow("→", d.fromHQ);
+                    }
+                    if (d.toHQ) {
+                        html += renderEtaRow("←", d.toHQ);
+                    }
+
+                    html += `</div>`;
+                });
+
+                gridEl.innerHTML = html;
+            }
+
+            function renderEtaRow(icon, data) {
+                if (data.status !== "OK") {
+                    return `
+          <div class="eta-row">
+            <div class="dir-icon">${icon}</div>
+            <div class="eta-data">
+              <div class="eta-time" style="font-size: 1.5rem; color: var(--color-amber)">N/A</div>
+              <div class="eta-sub">${escapeHtml(data.status)}</div>
+            </div>
+          </div>
+        `;
+                }
+
+                const trafficDuration = data.duration_in_traffic || data.duration;
+                const traffic = classifyDelta(data.duration.value, trafficDuration.value);
+                const etaStr = formatDuration(trafficDuration.value);
+                const distStr = formatDistance(data.distance.value, config.units);
+
+                return `
+        <div class="eta-row eta-row-anim">
+          <div class="dir-icon">${icon}</div>
+          <div class="eta-data">
+            <div class="eta-time">${etaStr}</div>
+            <div class="eta-sub">${distStr}</div>
+          </div>
+          <div class="traffic-chip chip-${traffic.level}">${traffic.label}</div>
+        </div>
+      `;
+            }
+
+            function applyRefreshAnimation() {
+                const rows = document.querySelectorAll(".eta-row-anim");
+                rows.forEach((row, i) => {
+                    // Staggered fade effect
+                    setTimeout(() => {
+                        row.style.opacity = "0.4";
+                        requestAnimationFrame(() => {
+                            setTimeout(() => {
+                                row.style.opacity = "1";
+                            }, 150);
+                        });
+                    }, i * 40);
+                });
+            }
+
+            function showError(msg) {
+                errorBarEl.textContent = msg;
+                errorBarEl.style.display = "block";
+            }
+
+            function hideError() {
+                errorBarEl.style.display = "none";
+            }
+
+            // Strips Google Maps endpoint prefix + protobuf "Details:" tail, and appends
+            // a short actionable hint for known Cloud Console misconfigurations.
+            function humanizeMapsError(err) {
+                let raw = (err && err.message) || String(err || "Unknown error");
+                raw = raw.replace(/^[A-Z_]+:\s*/, "");
+                const cut = raw.search(/\s+Details:\s|\s+\[\[/);
+                if (cut !== -1) raw = raw.slice(0, cut);
+                raw = raw.trim().replace(/\.$/, "");
+
+                let hint = "";
+                if (/API_KEY_SERVICE_BLOCKED/i.test(err?.message)) {
+                    hint = "Add Routes API to the API key's allowed APIs in Cloud Console.";
+                } else if (/SERVICE_DISABLED|has not been used in project/i.test(err?.message)) {
+                    hint = "Enable Routes API for this project in Cloud Console.";
+                } else if (/billing/i.test(err?.message)) {
+                    hint = "Enable billing on the Google Cloud project.";
+                } else if (/Timestamp must be set to a future time/i.test(err?.message)) {
+                    hint = "Internal: departureTime must be in the future.";
+                } else if (/RefererNotAllowed|referer/i.test(err?.message)) {
+                    hint = "Add this domain to the API key's HTTP referrer restrictions.";
+                } else if (/403/.test(err?.message) || /PERMISSION_DENIED/i.test(err?.message)) {
+                    hint = "Check API key restrictions and project permissions.";
+                } else if (/RESOURCE_EXHAUSTED|quota/i.test(err?.message)) {
+                    hint = "Quota exhausted. Check Cloud Console quotas.";
+                }
+                return hint ? `${raw}\n\n${hint}` : raw;
+            }
+
+            // --- 5. GOOGLE MAPS FETCHING ---
+
+            // Normalizes a RouteMatrix cell into the legacy shape expected by renderEtaRow.
+            function adaptCell(cell) {
+                if (!cell || cell.condition !== "ROUTE_EXISTS") {
+                    return { status: cell?.status?.message || cell?.condition || "NOT_FOUND" };
+                }
+                const trafficSec = cell.durationMillis / 1000;
+                // staticDurationMillis may not be present in all SDK versions; fall back to durationMillis
+                // so the traffic chip reads "On time" rather than crashing.
+                const staticSec = (cell.staticDurationMillis != null ? cell.staticDurationMillis : cell.durationMillis) / 1000;
+                return {
+                    status: "OK",
+                    duration: { value: staticSec },
+                    duration_in_traffic: { value: trafficSec },
+                    distance: { value: cell.distanceMeters },
+                };
+            }
+
+            async function fetchETAs() {
+                if (!routeMatrix) return;
+
+                const fromHQPlaces = PLACES.filter((p) => p.dir === "from-hq" || p.dir === "both");
+                const toHQPlaces = PLACES.filter((p) => p.dir === "to-hq" || p.dir === "both");
+
+                const routeRequest = (origins, destinations) => ({
+                    origins,
+                    destinations,
+                    travelMode: "DRIVING",
+                    routingPreference: "TRAFFIC_AWARE",
+                    departureTime: new Date(Date.now() + 60_000),
+                    fields: ["distanceMeters", "durationMillis", "staticDurationMillis", "condition"],
+                });
+
+                const reqFrom =
+                    fromHQPlaces.length > 0
+                        ? routeMatrix.computeRouteMatrix(
+                              routeRequest([HQ.address], fromHQPlaces.map((p) => p.address)),
+                          )
+                        : Promise.resolve(null);
+
+                const reqTo =
+                    toHQPlaces.length > 0
+                        ? routeMatrix.computeRouteMatrix(
+                              routeRequest(toHQPlaces.map((p) => p.address), [HQ.address]),
+                          )
+                        : Promise.resolve(null);
+
+                try {
+                    const [fromRes, toRes] = await Promise.all([reqFrom, reqTo]);
+
+                    if (config.debug && !debugLogged) {
+                        debugLogged = true;
+                        console.log("[debug] RouteMatrix response sample:", { fromRes, toRes });
+                    }
+
+                    // Map results back to places, normalizing to legacy cell shape.
+                    const dataMap = {};
+                    PLACES.forEach((p) => (dataMap[p.name] = {}));
+
+                    if (fromRes) {
+                        fromHQPlaces.forEach((p, i) => {
+                            dataMap[p.name].fromHQ = adaptCell(fromRes.matrix.rows[0].items[i]);
+                        });
+                    }
+
+                    if (toRes) {
+                        toHQPlaces.forEach((p, i) => {
+                            dataMap[p.name].toHQ = adaptCell(toRes.matrix.rows[i].items[0]);
+                        });
+                    }
+
+                    consecutiveFailures = 0;
+                    isStale = false;
+                    hideError();
+                    currentData = dataMap;
+
+                    renderCards(currentData);
+                    applyRefreshAnimation();
+
+                    lastUpdatedEl.textContent = formatTimeFull(new Date());
+                } catch (err) {
+                    console.error(err);
+                    consecutiveFailures++;
+                    isStale = true;
+                    if (currentData && Object.keys(currentData).length > 0) {
+                        showError(`Refresh failed: ${humanizeMapsError(err)} — showing stale data.`);
+                        renderCards(currentData);
+                    } else {
+                        // First-load failure: stop skeleton shimmer, hide grid, show error card.
+                        document.querySelectorAll(".skeleton").forEach((el) => el.classList.remove("skeleton"));
+                        gridEl.style.display = "none";
+                        const errEl = document.getElementById("firstLoadError");
+                        document.getElementById("firstLoadErrorMsg").textContent = humanizeMapsError(err);
+                        errEl.style.display = "block";
+                    }
+                }
+            }
+
+            // --- 6. LIFECYCLE ---
+            let refreshInFlight = false;
+            function doRefresh() {
+                if (refreshInFlight) return;
+
+                const { delayMs, mode, nextWindowStartLabel } = getNextRefreshDelayMs(new Date());
+                updateModeIndicator(mode, nextWindowStartLabel);
+
+                if (mode === "sleep") {
+                    // Do not call the API during the sleep window; reset backoff so re-entry starts fresh.
+                    consecutiveFailures = 0;
+                    nextRefreshTime = Date.now() + delayMs;
+                    // Stop skeleton shimmer if still showing on initial boot during sleep.
+                    document.querySelectorAll(".skeleton").forEach((el) => el.classList.remove("skeleton"));
+                    return;
+                }
+
+                refreshInFlight = true;
+                // Push deadline forward immediately to prevent tick from re-entering.
+                nextRefreshTime = Date.now() + delayMs;
+
+                fetchETAs()
+                    .then(() => {
+                        // consecutiveFailures was updated inside fetchETAs; compute schedule-aware next delay.
+                        const {
+                            delayMs: nextDelay,
+                            mode: nextMode,
+                            nextWindowStartLabel: nextLabel,
+                        } = getNextRefreshDelayMs(new Date());
+                        updateModeIndicator(nextMode, nextLabel);
+                        if (nextMode === "sleep") {
+                            consecutiveFailures = 0;
+                            nextRefreshTime = Date.now() + nextDelay;
+                        } else {
+                            const backoffDelay =
+                                consecutiveFailures > 0
+                                    ? Math.min(nextDelay * Math.pow(2, consecutiveFailures - 1), 30 * 60 * 1000)
+                                    : nextDelay;
+                            nextRefreshTime = Date.now() + backoffDelay;
+                        }
+                    })
+                    .finally(() => {
+                        refreshInFlight = false;
+                    });
+            }
+
+            function tick() {
+                const now = new Date();
+                clockEl.textContent = formatClock(now);
+
+                const brtMin = getBrtMinutes(now);
+                const mode = getScheduleMode(brtMin);
+                updateModeIndicator(mode, mode === "sleep" ? "06:00 BRT" : undefined);
+
+                const msLeft = nextRefreshTime - now.getTime();
+                if (mode !== "sleep") {
+                    nextRefreshEl.textContent = formatCountdown(msLeft);
+                }
+
+                if (msLeft <= 0) {
+                    doRefresh();
+                }
+            }
+
+            window.__onMapsReady = async function () {
+                try {
+                    const lib = await google.maps.importLibrary("routes");
+                    routeMatrix = lib.RouteMatrix;
+                    doRefresh();
+                    setInterval(tick, 1000);
+                } catch (err) {
+                    showError("Failed to load Google Maps Routes library.");
+                }
+            };
+
+            function boot() {
+                if (!config.key) {
+                    renderEmptyState();
+                    return;
+                }
+
+                renderSkeleton();
+
+                // Load Maps API
+                const script = document.createElement("script");
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.key)}&loading=async&callback=__onMapsReady`;
+                script.async = true;
+                script.defer = true;
+                script.onerror = () => {
+                    document.querySelectorAll(".skeleton").forEach((el) => el.classList.remove("skeleton"));
+                    showError("Failed to load Google Maps. Check the API key, billing, and network.");
+                };
+                document.head.appendChild(script);
+
+                // Start clock immediately
+                tick();
+            }
+
+            document.addEventListener("DOMContentLoaded", boot);
+        </script>
+    </body>
+</html>
