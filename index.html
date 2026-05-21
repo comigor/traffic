@@ -207,6 +207,9 @@
                 font-size: 1.5rem;
                 font-weight: 600;
                 letter-spacing: -0.01em;
+                display: flex;
+                align-items: center;
+                gap: 8px;
             }
 
             .stale-badge {
@@ -231,7 +234,9 @@
                 font-size: 1.5rem;
                 color: var(--text-dim);
                 width: 24px;
-                text-align: center;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
 
             .eta-data {
@@ -300,6 +305,18 @@
                 background: rgba(248, 113, 113, 0.15);
                 color: var(--color-red);
             }
+            .chip-transit {
+                background: rgba(34, 211, 238, 0.12);
+                color: #22d3ee;
+            }
+
+            .icon {
+                width: 1em;
+                height: 1em;
+                fill: currentColor;
+                vertical-align: -0.15em;
+                flex-shrink: 0;
+            }
 
             .mode-peak {
                 color: var(--text);
@@ -366,6 +383,18 @@
         </style>
     </head>
     <body>
+        <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+            <defs>
+                <symbol id="icon-plane" viewBox="0 0 24 24"><path d="M22 16v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5V9L2 14v2l8.5-2.5V19L8 20.5V22l3.5-1 3.5 1v-1.5L12.5 19v-5.5L22 16z"/></symbol>
+                <symbol id="icon-park" viewBox="0 0 24 24"><path d="M17 12h2L12 2 5.05 12H7l-3.9 6h6.92v3h3.95v-3H21z"/></symbol>
+                <symbol id="icon-soccer" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm6.93 6h-2.95a15.65 15.65 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 0 1 5.08 16zm2.95-8H5.08a7.99 7.99 0 0 1 4.33-3.56A15.65 15.65 0 0 0 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></symbol>
+                <symbol id="icon-subway" viewBox="0 0 24 24"><path d="M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h12v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-4-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-7H6V6h5v4zm5.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-7h-5V6h5v4z"/></symbol>
+                <symbol id="icon-home" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></symbol>
+                <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></symbol>
+                <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z"/></symbol>
+            </defs>
+        </svg>
+
         <div class="ambient-bg"></div>
         <div class="noise-overlay"></div>
 
@@ -422,37 +451,14 @@
             // --- 1. CONFIGURATION ---
             const HQ = { name: "HQ", address: "Rua Groenlândia, 1157 - Jardim America, São Paulo - SP, 01434-100" };
             const PLACES = [
-                {
-                    name: "✈️ GRU Airport",
-                    address: "Rod. Hélio Smidt, s/nº - Aeroporto, Guarulhos - SP, 07190-100",
-                    dir: "both",
-                },
-                {
-                    name: "✈️ CGH Airport",
-                    address: "Av. Washington Luís, s/n - Campo Belo, São Paulo - SP, 04626-911",
-                    dir: "both",
-                },
-                {
-                    name: "🚰 Parque SABESP",
-                    address: "Av. Prof. Alfonso Bovero - Pompeia, São Paulo - SP, 01254-050",
-                    dir: "both",
-                },
-                {
-                    name: "⚽ MorumBIS",
-                    address: "Praça Roberto Gomes Pedrosa, 1 - Morumbi, São Paulo - SP, 05653-070",
-                    dir: "both",
-                },
-                {
-                    name: "🚇 Santa Cruz",
-                    address: "R. Domingos de Morais, 2564 - Vila Mariana, São Paulo - SP, 04036-100",
-                    dir: "both",
-                },
-                { name: "🚇 Moema", address: "Indianópolis, São Paulo - State of São Paulo, 04075-010", dir: "both" },
-                {
-                    name: "🚇 Fradique Coutinho",
-                    address: "R. dos Pinheiros, 623 - Pinheiros, São Paulo - SP, 05422-011",
-                    dir: "both",
-                },
+                { name: "GRU Airport",       icon: "plane",  address: "Rod. Hélio Smidt, s/nº - Aeroporto, Guarulhos - SP, 07190-100",                dir: "both", mode: "driving" },
+                { name: "CGH Airport",       icon: "plane",  address: "Av. Washington Luís, s/n - Campo Belo, São Paulo - SP, 04626-911",              dir: "both", mode: "driving" },
+                { name: "Parque SABESP",     icon: "park",   address: "Av. Prof. Alfonso Bovero - Pompeia, São Paulo - SP, 01254-050",                 dir: "both", mode: "driving" },
+                { name: "MorumBIS",          icon: "soccer", address: "Praça Roberto Gomes Pedrosa, 1 - Morumbi, São Paulo - SP, 05653-070",           dir: "both", mode: "driving" },
+                { name: "Santa Cruz",        icon: "subway", address: "R. Domingos de Morais, 2564 - Vila Mariana, São Paulo - SP, 04036-100",         dir: "both", mode: "driving" },
+                { name: "Moema",             icon: "subway", address: "Indianópolis, São Paulo - State of São Paulo, 04075-010",                       dir: "both", mode: "driving" },
+                { name: "Fradique Coutinho", icon: "subway", address: "R. dos Pinheiros, 623 - Pinheiros, São Paulo - SP, 05422-011",                  dir: "both", mode: "driving" },
+                { name: "Fabricio's",        icon: "home",   address: "Av. Divino Salvador, 166 - Planalto Paulista, São Paulo - SP, 04078-010",       dir: "both", mode: "transit" },
             ];
 
             // Refresh schedule — all times in BRT (America/Sao_Paulo), expressed as minutes since midnight.
@@ -640,13 +646,16 @@
                     (p) => `
         <div class="card">
           <div class="card-header">
-            <div class="card-title">${escapeHtml(p.name)}</div>
+            <div class="card-title">
+              <svg class="icon" style="font-size: 1.2em"><use href="#icon-${p.icon}"/></svg>
+              ${escapeHtml(p.name)}
+            </div>
           </div>
           ${
               p.dir === "from-hq" || p.dir === "both"
                   ? `
             <div class="eta-row eta-row-anim">
-              <div class="dir-icon">→</div>
+              <div class="dir-icon"><svg class="icon"><use href="#icon-arrow-right"/></svg></div>
               <div class="eta-data">
                 <div class="eta-time skeleton">00</div>
                 <div class="eta-sub skeleton">0</div>
@@ -660,7 +669,7 @@
               p.dir === "to-hq" || p.dir === "both"
                   ? `
             <div class="eta-row eta-row-anim">
-              <div class="dir-icon">←</div>
+              <div class="dir-icon"><svg class="icon"><use href="#icon-arrow-left"/></svg></div>
               <div class="eta-data">
                 <div class="eta-time skeleton">00</div>
                 <div class="eta-sub skeleton">0</div>
@@ -675,6 +684,9 @@
                 ).join("");
             }
 
+            const ARROW_RIGHT = `<svg class="icon"><use href="#icon-arrow-right"/></svg>`;
+            const ARROW_LEFT = `<svg class="icon"><use href="#icon-arrow-left"/></svg>`;
+
             function renderCards(dataMap) {
                 let html = "";
 
@@ -684,15 +696,18 @@
 
                     html += `<div class="card" id="card-${index}">
           <div class="card-header">
-            <div class="card-title">${escapeHtml(p.name)}</div>
+            <div class="card-title">
+              <svg class="icon" style="font-size: 1.2em"><use href="#icon-${p.icon}"/></svg>
+              ${escapeHtml(p.name)}
+            </div>
             <div class="stale-badge" style="display: ${isStale ? "block" : "none"}">STALE</div>
           </div>`;
 
                     if (d.fromHQ) {
-                        html += renderEtaRow("→", d.fromHQ);
+                        html += renderEtaRow(ARROW_RIGHT, d.fromHQ);
                     }
                     if (d.toHQ) {
-                        html += renderEtaRow("←", d.toHQ);
+                        html += renderEtaRow(ARROW_LEFT, d.toHQ);
                     }
 
                     html += `</div>`;
@@ -715,9 +730,16 @@
                 }
 
                 const trafficDuration = data.duration_in_traffic || data.duration;
-                const traffic = classifyDelta(data.duration.value, trafficDuration.value);
                 const etaStr = formatDuration(trafficDuration.value);
                 const distStr = formatDistance(data.distance.value, config.units);
+
+                // Transit rows show a fixed TRANSIT chip; driving rows show the traffic-delta chip.
+                const chip = data.mode === "transit"
+                    ? `<div class="traffic-chip chip-transit">TRANSIT</div>`
+                    : (() => {
+                        const traffic = classifyDelta(data.duration.value, trafficDuration.value);
+                        return `<div class="traffic-chip chip-${traffic.level}">${traffic.label}</div>`;
+                    })();
 
                 return `
         <div class="eta-row eta-row-anim">
@@ -726,7 +748,7 @@
             <div class="eta-time">${etaStr}</div>
             <div class="eta-sub">${distStr}</div>
           </div>
-          <div class="traffic-chip chip-${traffic.level}">${traffic.label}</div>
+          ${chip}
         </div>
       `;
             }
@@ -786,16 +808,17 @@
             // --- 5. GOOGLE MAPS FETCHING ---
 
             // Normalizes a RouteMatrix cell into the legacy shape expected by renderEtaRow.
-            function adaptCell(cell) {
+            function adaptCell(cell, mode) {
                 if (!cell || cell.condition !== "ROUTE_EXISTS") {
-                    return { status: cell?.status?.message || cell?.condition || "NOT_FOUND" };
+                    return { status: cell?.status?.message || cell?.condition || "NOT_FOUND", mode };
                 }
                 const trafficSec = cell.durationMillis / 1000;
-                // staticDurationMillis may not be present in all SDK versions; fall back to durationMillis
-                // so the traffic chip reads "On time" rather than crashing.
+                // staticDurationMillis is not sent for transit and may be absent in some SDK versions;
+                // fall back to durationMillis so the chip reads "On time" rather than crashing.
                 const staticSec = (cell.staticDurationMillis != null ? cell.staticDurationMillis : cell.durationMillis) / 1000;
                 return {
                     status: "OK",
+                    mode,
                     duration: { value: staticSec },
                     duration_in_traffic: { value: trafficSec },
                     distance: { value: cell.distanceMeters },
@@ -808,50 +831,86 @@
                 const fromHQPlaces = PLACES.filter((p) => p.dir === "from-hq" || p.dir === "both");
                 const toHQPlaces = PLACES.filter((p) => p.dir === "to-hq" || p.dir === "both");
 
-                const routeRequest = (origins, destinations) => ({
-                    origins,
-                    destinations,
-                    travelMode: "DRIVING",
-                    routingPreference: "TRAFFIC_AWARE",
-                    departureTime: new Date(Date.now() + 60_000),
-                    fields: ["distanceMeters", "durationMillis", "staticDurationMillis", "condition"],
-                });
+                // Group places by travel mode for each direction.
+                function groupByMode(places) {
+                    return places.reduce((acc, p) => {
+                        const m = p.mode || "driving";
+                        if (!acc[m]) acc[m] = [];
+                        acc[m].push(p);
+                        return acc;
+                    }, {});
+                }
+                const fromByMode = groupByMode(fromHQPlaces);
+                const toByMode = groupByMode(toHQPlaces);
 
-                const reqFrom =
-                    fromHQPlaces.length > 0
-                        ? routeMatrix.computeRouteMatrix(
-                              routeRequest([HQ.address], fromHQPlaces.map((p) => p.address)),
-                          )
-                        : Promise.resolve(null);
+                function buildRequest(origins, destinations, mode) {
+                    const req = {
+                        origins,
+                        destinations,
+                        travelMode: mode === "transit" ? "TRANSIT" : "DRIVING",
+                        departureTime: new Date(Date.now() + 60_000),
+                        fields: ["distanceMeters", "durationMillis", "condition"],
+                    };
+                    if (mode !== "transit") {
+                        req.routingPreference = "TRAFFIC_AWARE";
+                        req.fields = ["distanceMeters", "durationMillis", "staticDurationMillis", "condition"];
+                    }
+                    return req;
+                }
 
-                const reqTo =
-                    toHQPlaces.length > 0
-                        ? routeMatrix.computeRouteMatrix(
-                              routeRequest(toHQPlaces.map((p) => p.address), [HQ.address]),
-                          )
-                        : Promise.resolve(null);
+                // Each call is isolated so a single-mode failure does not abort other directions.
+                async function safeCall(tag, request) {
+                    try {
+                        const res = await routeMatrix.computeRouteMatrix(request);
+                        return { tag, res };
+                    } catch (err) {
+                        console.warn(`[RouteMatrix] ${tag} call failed:`, err.message);
+                        return { tag, res: null, err };
+                    }
+                }
+
+                const tasks = [];
+                for (const [mode, places] of Object.entries(fromByMode)) {
+                    tasks.push(safeCall(`from-${mode}`, buildRequest([HQ.address], places.map((p) => p.address), mode)));
+                }
+                for (const [mode, places] of Object.entries(toByMode)) {
+                    tasks.push(safeCall(`to-${mode}`, buildRequest(places.map((p) => p.address), [HQ.address], mode)));
+                }
 
                 try {
-                    const [fromRes, toRes] = await Promise.all([reqFrom, reqTo]);
+                    const results = await Promise.all(tasks);
 
                     if (config.debug && !debugLogged) {
                         debugLogged = true;
-                        console.log("[debug] RouteMatrix response sample:", { fromRes, toRes });
+                        console.log("[debug] RouteMatrix response sample:", results);
                     }
 
-                    // Map results back to places, normalizing to legacy cell shape.
+                    // Only trigger backoff if every call failed.
+                    if (results.length > 0 && results.every((r) => !r.res)) {
+                        throw results.find((r) => r.err)?.err || new Error("All route matrix calls failed.");
+                    }
+
+                    const byTag = Object.fromEntries(results.map((r) => [r.tag, r]));
+
+                    // Map results back to places, normalizing to the legacy cell shape.
                     const dataMap = {};
                     PLACES.forEach((p) => (dataMap[p.name] = {}));
 
-                    if (fromRes) {
-                        fromHQPlaces.forEach((p, i) => {
-                            dataMap[p.name].fromHQ = adaptCell(fromRes.matrix.rows[0].items[i]);
+                    for (const [mode, places] of Object.entries(fromByMode)) {
+                        const r = byTag[`from-${mode}`];
+                        places.forEach((p, i) => {
+                            dataMap[p.name].fromHQ = r?.res
+                                ? adaptCell(r.res.matrix.rows[0].items[i], mode)
+                                : { status: "ERROR", mode };
                         });
                     }
 
-                    if (toRes) {
-                        toHQPlaces.forEach((p, i) => {
-                            dataMap[p.name].toHQ = adaptCell(toRes.matrix.rows[i].items[0]);
+                    for (const [mode, places] of Object.entries(toByMode)) {
+                        const r = byTag[`to-${mode}`];
+                        places.forEach((p, i) => {
+                            dataMap[p.name].toHQ = r?.res
+                                ? adaptCell(r.res.matrix.rows[i].items[0], mode)
+                                : { status: "ERROR", mode };
                         });
                     }
 
