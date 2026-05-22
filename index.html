@@ -308,6 +308,9 @@
             .chip-transit {
                 background: rgba(34, 211, 238, 0.12);
                 color: #22d3ee;
+                max-width: 12em;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
 
             .icon {
@@ -494,7 +497,9 @@
             let isStale = false;
             let consecutiveFailures = 0;
             let routeMatrix = null;
+            let routeClass = null;
             let debugLogged = false;
+            let transitDebugLogged = false;
 
             // Store current rendered data to diff for animations
             let currentData = {};
@@ -731,22 +736,37 @@
 
                 const trafficDuration = data.duration_in_traffic || data.duration;
                 const etaStr = formatDuration(trafficDuration.value);
-                const distStr = formatDistance(data.distance.value, config.units);
 
-                // Transit rows show a fixed TRANSIT chip; driving rows show the traffic-delta chip.
-                const chip = data.mode === "transit"
-                    ? `<div class="traffic-chip chip-transit">TRANSIT</div>`
-                    : (() => {
-                        const traffic = classifyDelta(data.duration.value, trafficDuration.value);
-                        return `<div class="traffic-chip chip-${traffic.level}">${traffic.label}</div>`;
-                    })();
+                let subStr = formatDistance(data.distance.value, config.units);
+                if (data.mode === "transit" && (data.walkSec ?? 0) >= 30) {
+                    const walkMin = Math.max(1, Math.round(data.walkSec / 60));
+                    subStr += ` · ${walkMin} min walk`;
+                }
+
+                let chip;
+                if (data.mode === "transit") {
+                    const label = escapeHtml(data.lineName ?? "WALK");
+                    const color = data.lineColor;
+                    let chipStyle = "";
+                    if (color) {
+                        // Expand #rgb → #rrggbb before appending the 8-digit alpha suffix.
+                        const hex6 = color.length === 4
+                            ? "#" + color[1] + color[1] + color[2] + color[2] + color[3] + color[3]
+                            : color;
+                        chipStyle = ` style="background:${hex6}20;color:${color}"`;
+                    }
+                    chip = `<div class="traffic-chip chip-transit"${chipStyle}>${label}</div>`;
+                } else {
+                    const traffic = classifyDelta(data.duration.value, trafficDuration.value);
+                    chip = `<div class="traffic-chip chip-${traffic.level}">${traffic.label}</div>`;
+                }
 
                 return `
         <div class="eta-row eta-row-anim">
           <div class="dir-icon">${icon}</div>
           <div class="eta-data">
             <div class="eta-time">${etaStr}</div>
-            <div class="eta-sub">${distStr}</div>
+            <div class="eta-sub">${subStr}</div>
           </div>
           ${chip}
         </div>
@@ -825,56 +845,125 @@
                 };
             }
 
+            // Performs a single computeRoutes call for a transit origin→destination pair.
+            // Returns a normalized cell object compatible with renderEtaRow, plus transit-specific fields.
+            async function fetchTransitRoute(origin, destination) {
+                if (!routeClass) return { status: "NOT_FOUND", mode: "transit" };
+
+                const { routes } = await routeClass.computeRoutes({
+                    origin,
+                    destination,
+                    travelMode: "TRANSIT",
+                    departureTime: new Date(Date.now() + 60_000),
+                    transitPreference: {
+                        allowedTransitModes: ["BUS", "SUBWAY", "TRAIN", "LIGHT_RAIL", "RAIL"],
+                        routingPreference: "FEWER_TRANSFERS",
+                    },
+                    computeAlternativeRoutes: false,
+                    fields: ["durationMillis", "staticDurationMillis", "distanceMeters", "legs"],
+                });
+
+                const route = routes?.[0];
+                if (!route) return { status: "NOT_FOUND", mode: "transit" };
+
+                if (config.debug && !transitDebugLogged) {
+                    transitDebugLogged = true;
+                    console.log("[debug] Transit route legs[0].steps sample (verify field names):", route.legs?.[0]?.steps);
+                }
+
+                const totalSec = route.durationMillis / 1000;
+                const distM = route.distanceMeters;
+                const leg = route.legs?.[0];
+
+                let walkSec = 0;
+                let lineName = null;
+                let lineColor = null;
+                let vehicleType = null;
+
+                if (leg?.steps) {
+                    for (const step of leg.steps) {
+                        if (step.travelMode === "WALKING" || step.travelMode === "WALK") {
+                            // Try both known field name variants; fall back to 0.
+                            walkSec += (step.staticDurationMillis ?? step.durationMillis ?? 0) / 1000;
+                        }
+                        if (step.travelMode === "TRANSIT" && lineName === null) {
+                            const line = step.transitDetails?.transitLine;
+                            if (line) {
+                                // Try both shortName and nameShort variants; fall back to full name.
+                                lineName = line.shortName ?? line.nameShort ?? line.name ?? null;
+                                const rawColor = line.color ?? null;
+                                // Accept only valid CSS hex: #rgb (4 chars) or #rrggbb (7 chars).
+                                lineColor = (typeof rawColor === "string" &&
+                                    /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(rawColor))
+                                    ? rawColor : null;
+                                vehicleType = line.vehicle?.type ?? null;
+                            }
+                        }
+                    }
+                }
+
+                return {
+                    status: "OK",
+                    mode: "transit",
+                    duration: { value: totalSec },
+                    duration_in_traffic: { value: totalSec },
+                    distance: { value: distM },
+                    walkSec,
+                    lineName,
+                    lineColor,
+                    vehicleType,
+                };
+            }
+
             async function fetchETAs() {
                 if (!routeMatrix) return;
 
                 const fromHQPlaces = PLACES.filter((p) => p.dir === "from-hq" || p.dir === "both");
                 const toHQPlaces = PLACES.filter((p) => p.dir === "to-hq" || p.dir === "both");
 
-                // Group places by travel mode for each direction.
-                function groupByMode(places) {
-                    return places.reduce((acc, p) => {
-                        const m = p.mode || "driving";
-                        if (!acc[m]) acc[m] = [];
-                        acc[m].push(p);
-                        return acc;
-                    }, {});
-                }
-                const fromByMode = groupByMode(fromHQPlaces);
-                const toByMode = groupByMode(toHQPlaces);
+                const fromDriving = fromHQPlaces.filter((p) => (p.mode || "driving") !== "transit");
+                const toDriving = toHQPlaces.filter((p) => (p.mode || "driving") !== "transit");
+                const fromTransit = fromHQPlaces.filter((p) => p.mode === "transit");
+                const toTransit = toHQPlaces.filter((p) => p.mode === "transit");
 
-                function buildRequest(origins, destinations, mode) {
-                    const req = {
-                        origins,
-                        destinations,
-                        travelMode: mode === "transit" ? "TRANSIT" : "DRIVING",
-                        departureTime: new Date(Date.now() + 60_000),
-                        fields: ["distanceMeters", "durationMillis", "condition"],
-                    };
-                    if (mode !== "transit") {
-                        req.routingPreference = "TRAFFIC_AWARE";
-                        req.fields = ["distanceMeters", "durationMillis", "staticDurationMillis", "condition"];
-                    }
-                    return req;
-                }
-
-                // Each call is isolated so a single-mode failure does not abort other directions.
-                async function safeCall(tag, request) {
+                // Generic safe wrapper — catches any thrown exception, returns null res on failure.
+                async function safeCall(tag, promise) {
                     try {
-                        const res = await routeMatrix.computeRouteMatrix(request);
+                        const res = await promise;
                         return { tag, res };
                     } catch (err) {
-                        console.warn(`[RouteMatrix] ${tag} call failed:`, err.message);
+                        console.warn(`[Routes] ${tag} call failed:`, err.message);
                         return { tag, res: null, err };
                     }
                 }
 
-                const tasks = [];
-                for (const [mode, places] of Object.entries(fromByMode)) {
-                    tasks.push(safeCall(`from-${mode}`, buildRequest([HQ.address], places.map((p) => p.address), mode)));
+                function buildDrivingRequest(origins, destinations) {
+                    return {
+                        origins,
+                        destinations,
+                        travelMode: "DRIVING",
+                        routingPreference: "TRAFFIC_AWARE",
+                        departureTime: new Date(Date.now() + 60_000),
+                        fields: ["distanceMeters", "durationMillis", "staticDurationMillis", "condition"],
+                    };
                 }
-                for (const [mode, places] of Object.entries(toByMode)) {
-                    tasks.push(safeCall(`to-${mode}`, buildRequest(places.map((p) => p.address), [HQ.address], mode)));
+
+                const tasks = [];
+                if (fromDriving.length > 0) {
+                    tasks.push(safeCall("from-driving",
+                        routeMatrix.computeRouteMatrix(buildDrivingRequest([HQ.address], fromDriving.map((p) => p.address)))
+                    ));
+                }
+                if (toDriving.length > 0) {
+                    tasks.push(safeCall("to-driving",
+                        routeMatrix.computeRouteMatrix(buildDrivingRequest(toDriving.map((p) => p.address), [HQ.address]))
+                    ));
+                }
+                for (const p of fromTransit) {
+                    tasks.push(safeCall(`transit-from-${p.name}`, fetchTransitRoute(HQ.address, p.address)));
+                }
+                for (const p of toTransit) {
+                    tasks.push(safeCall(`transit-to-${p.name}`, fetchTransitRoute(p.address, HQ.address)));
                 }
 
                 try {
@@ -882,36 +971,42 @@
 
                     if (config.debug && !debugLogged) {
                         debugLogged = true;
-                        console.log("[debug] RouteMatrix response sample:", results);
+                        console.log("[debug] All route call results:", results);
                     }
 
                     // Only trigger backoff if every call failed.
                     if (results.length > 0 && results.every((r) => !r.res)) {
-                        throw results.find((r) => r.err)?.err || new Error("All route matrix calls failed.");
+                        throw results.find((r) => r.err)?.err || new Error("All route calls failed.");
                     }
 
                     const byTag = Object.fromEntries(results.map((r) => [r.tag, r]));
 
-                    // Map results back to places, normalizing to the legacy cell shape.
                     const dataMap = {};
                     PLACES.forEach((p) => (dataMap[p.name] = {}));
 
-                    for (const [mode, places] of Object.entries(fromByMode)) {
-                        const r = byTag[`from-${mode}`];
-                        places.forEach((p, i) => {
-                            dataMap[p.name].fromHQ = r?.res
-                                ? adaptCell(r.res.matrix.rows[0].items[i], mode)
-                                : { status: "ERROR", mode };
-                        });
-                    }
+                    // Driving: unpack matrix rows by index.
+                    const fromDrivingR = byTag["from-driving"];
+                    fromDriving.forEach((p, i) => {
+                        dataMap[p.name].fromHQ = fromDrivingR?.res
+                            ? adaptCell(fromDrivingR.res.matrix.rows[0].items[i], "driving")
+                            : { status: "ERROR", mode: "driving" };
+                    });
 
-                    for (const [mode, places] of Object.entries(toByMode)) {
-                        const r = byTag[`to-${mode}`];
-                        places.forEach((p, i) => {
-                            dataMap[p.name].toHQ = r?.res
-                                ? adaptCell(r.res.matrix.rows[i].items[0], mode)
-                                : { status: "ERROR", mode };
-                        });
+                    const toDrivingR = byTag["to-driving"];
+                    toDriving.forEach((p, i) => {
+                        dataMap[p.name].toHQ = toDrivingR?.res
+                            ? adaptCell(toDrivingR.res.matrix.rows[i].items[0], "driving")
+                            : { status: "ERROR", mode: "driving" };
+                    });
+
+                    // Transit: fetchTransitRoute already returns the normalized cell directly.
+                    for (const p of fromTransit) {
+                        const r = byTag[`transit-from-${p.name}`];
+                        dataMap[p.name].fromHQ = r?.res ?? { status: "ERROR", mode: "transit" };
+                    }
+                    for (const p of toTransit) {
+                        const r = byTag[`transit-to-${p.name}`];
+                        dataMap[p.name].toHQ = r?.res ?? { status: "ERROR", mode: "transit" };
                     }
 
                     consecutiveFailures = 0;
@@ -1009,6 +1104,7 @@
                 try {
                     const lib = await google.maps.importLibrary("routes");
                     routeMatrix = lib.RouteMatrix;
+                    routeClass = lib.Route;
                     doRefresh();
                     setInterval(tick, 1000);
                 } catch (err) {

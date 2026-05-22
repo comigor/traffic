@@ -34,7 +34,7 @@ const PLACES = [
 | `icon` | yes | `plane` `park` `soccer` `subway` `home` | Inline SVG; see below to add more |
 | `address` | yes | any string | Passed directly to the Routes API |
 | `dir` | yes | `'from-hq'` `'to-hq'` `'both'` | Which directions to request and display |
-| `mode` | yes | `'driving'` `'transit'` | Travel mode for the Routes API call. Driving rows show a traffic-delta chip; transit rows show a fixed TRANSIT chip. |
+| `mode` | yes | `'driving'` `'transit'` | Travel mode. Driving uses `computeRouteMatrix` (batched, Advanced SKU). Transit uses `computeRoutes` per pair (Essentials SKU, 10k/month free tier) to extract the transit line name and walking time. Each transit place adds ~2 calls per refresh. Transit rows show a line-name chip (colored if the API returns a line color) and walking time in the sub-label. |
 
 ### Adding a new icon
 
@@ -74,16 +74,18 @@ Example:
 
 ## Estimated API cost
 
-Each refresh fires up to 4 parallel `computeRouteMatrix` calls (one per travel-mode x direction combination). With the current 8-place list (7 driving + 1 transit, all `dir: "both"`):
+Each refresh fires parallel calls. With the current 8-place list (7 driving + 1 transit, all `dir: "both"`):
 
-- 2 driving calls: 1 x 7 elements (HQ -> driving places) + 7 x 1 elements (driving places -> HQ) = 14 elements
-- 2 transit calls: 1 x 1 element (HQ -> transit place) + 1 x 1 element (transit place -> HQ) = 2 elements
-- **16 elements per refresh**
+**Driving** (`computeRouteMatrix`, Advanced SKU — $10/1000 elements):
+- 2 calls: 1×7 elements (HQ → driving) + 7×1 elements (driving → HQ) = 14 elements/refresh
 
-At $10 per 1,000 elements:
+**Transit** (`computeRoutes`, Essentials SKU — $5/1000 calls, 10k/month free):
+- 2 calls: 1 call each direction per transit place = 2 calls/refresh
 
-- **Peak hours** (~4.5 h/day, 10-min interval): ~27 refreshes x 16 elements = 432 elements/day
-- **Off-peak** (~11.5 active hours, 60-min interval): ~11 refreshes x 16 elements = 176 elements/day
-- **Sleep** (22:00 – 06:00): 0 elements
+At stated rates:
 
-**Total: ~608 elements/day ≈ $0.006/day (~$2.19/year).**
+- **Peak** (~4.5 h/day, 10-min interval, ~27 refreshes): 378 driving elements + 54 transit calls/day
+- **Off-peak** (~11.5 h/day, 60-min interval, ~11 refreshes): 154 driving elements + 22 transit calls/day
+- **Sleep**: 0
+
+**Total: ~532 driving elements/day ≈ $0.0053/day + ~76 transit calls/day well within free tier. (~$1.94/year for driving alone.)**
